@@ -1,0 +1,330 @@
+---
+title: "Further_cleaning"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+setwd("C:/Users/kian3/OneDrive - KU Leuven/Documents/lessen/Thesis")
+library(tidyverse)
+
+# Make paths to the files
+files <- rep("", 30)
+competitions <- c("Bundesliga", "Eredivisie", "LaLiga", "Ligue 1", "PL", "Serie A")
+seasons <- c("2021", "2122", "2223", "2324", "2425")
+index <- 0
+
+for (i in competitions) {
+  for (j in seasons){
+    index <- index + 1
+    files[index] <- paste0("Processed_full_stats/", i, "/", i, "_", j, ".csv")
+    }
+}
+
+# Make paths to the JPL files
+jpl_files <- rep("", 10)
+jpl_index <- 0
+rounds <- c("playoffs", "regular_season")
+seasons <- c("2021", "2122", "2223", "2324", "2425")
+
+for (i in rounds) {
+  for (j in seasons){
+    jpl_index <- jpl_index + 1
+    jpl_files[jpl_index] <- paste0("Processed_full_stats/JPL/JPL_", j, "_", i, ".csv")
+    }
+}
+
+# Combine all files in one object
+files <- c(files, jpl_files)
+
+# Add column round for La Liga files
+La_liga_files <- files[11:15]
+La_liga_df <- read_csv(La_liga_files, id = "comp_season")
+La_liga_df <- La_liga_df |> 
+  mutate(Round = "LaLiga") |> 
+  relocate(Round)
+
+files <- files[-c(11:15)]
+
+# Add column round for one ligue 1 file
+ligue1_file <- files[13]
+ligue1_df <- read_csv(ligue1_file, id = "comp_season")
+ligue1_df <- ligue1_df |> 
+  mutate(Round = "Ligue 1") |> 
+  relocate(Round)
+
+files <- files[-13]
+
+# Add column round for Pl files
+PL_files <- files[15:19]
+PL_df <- read_csv(PL_files, id = "comp_season")
+PL_df <- PL_df |> 
+  mutate(Round = "PL") |> 
+  relocate(Round)
+
+files <- files[-c(15:19)]
+
+# Add column round for some serie A files
+serieA_files <- files[c(15, 16, 18, 19)]
+serieA_df <- read_csv(serieA_files, id = "comp_season")
+serieA_df <- serieA_df |> 
+  mutate(Round = "Serie A") |> 
+  relocate(Round)
+
+files <- files[-c(15, 16, 18, 19)]
+full_df <- read_csv(files, id = "comp_season")
+full_df <- rbind(full_df, serieA_df, ligue1_df, La_liga_df, PL_df)
+
+# Extract number of passes and passing accuracy columns
+full_df <- full_df %>%
+  mutate(
+    Home_Number_passes = as.numeric(str_extract(Home_Passing_accuracy, "(?<=of )\\d+")), # (?<=of ) sees if "of" is before the number but drops of, \\d+ takes then all digits folowing the of.  
+    Home_Passing_accuracy = str_extract(Home_Passing_accuracy, "\\d+%$"),
+# $ makes sure to take the digits at the end of the string folowed by a %
+    
+    Away_Number_passes = as.numeric(str_extract(Away_Passing_accuracy, "(?<=of )\\d+")),
+
+    Away_Passing_accuracy = str_extract(Away_Passing_accuracy, "^\\d+%"), 
+# ^ makes sure to take them at the start of the string
+    Home_shots = as.numeric(str_extract(Home_Shots_on_Target, "(?<=of )\\d+")), 
+    Home_Shots_on_Target = as.numeric(str_extract(Home_Shots_on_Target, "^\\d+")), 
+    Away_shots = as.numeric(str_extract(Away_Shots_on_Target, "(?<=of )\\d+")), 
+    Away_Shots_on_Target = as.numeric(str_extract(Away_Shots_on_Target, "\\d+(?= of)")),
+    Home_Saves_accuracy = str_extract(Home_Saves, "\\d+%$"),
+    Home_Saves = as.numeric(str_extract(Home_Saves, "^\\d+")),
+    Away_Saves_accuracy = str_extract(Away_Saves, "^\\d+%"),
+    Away_Saves = as.numeric(str_extract(Away_Saves, "\\d+(?= of)")),
+  ) |> 
+  relocate(Home_Number_passes, .before = Home_Passing_accuracy) |> 
+  relocate(Away_Number_passes, .before = Away_Passing_accuracy) |>
+  relocate(Home_shots, .before = Home_Shots_on_Target) |> 
+  relocate(Away_shots, .before = Away_Shots_on_Target) |> 
+  relocate(Home_Saves_accuracy, .before = Home_Saves) |> 
+  relocate(Away_Saves_accuracy, .before = Away_Saves)
+
+# Deleting empty columns 
+df <- full_df |> 
+  select(-c("Match.Report", "Notes"))
+  
+# Temporary saving for check
+setwd("C:/Users/kian3/OneDrive - KU Leuven/Documents/lessen/Thesis")
+write_csv(df, "Processed_full_stats/Full_df/full_df_1.csv")
+```
+
+```{r}
+# Fix matches of Sparta rotterdam (Sparta.R.dam VS Sparta.R'dam) Nottingham forest (Nott.ham.Forest VS Nott'ham Forest) and St Pauli (double point in Home_team variable, 1 point in squad variable) because of wrong code
+# This is done per season by filtering per season (competitions combined)
+library(rvest)
+library(xml2)
+setwd("C:/Users/kian3/OneDrive - KU Leuven/Documents")
+df <- read_csv("lessen/Thesis/Processed_full_stats/Full_df/full_df_1.csv")
+problems <- df |> 
+  filter(is.na(Home_possesion)) |> 
+  select(comp_season:goal_scored)
+
+links <- problems %>%
+  pull(link)
+scraped_full_data <- map_dfr(links[c(35:69)], team_stats_fbref_with_delay, .progress = TRUE)
+
+scraped_full_data$xG <- as.double(scraped_full_data$xG)
+scraped_full_data$PSxG <- as.double(scraped_full_data$PSxG)
+
+df <- scraped_full_data
+
+df_prepared <- df |>
+  fill(Home_team, Away_team, Home_possesion, Away_possesion, Home_Passing_accuracy, Away_Passing_accuracy, Home_Shots_on_Target, Away_Shots_on_Target, Home_Saves, Away_Saves, Home_Corners, Away_Corners) |>
+  mutate(Minute = parse_number(as.character(Minute))) |>
+  filter(!is.na(xG)) 
+
+df_prepared$Home_team <- gsub(".", " ", df_prepared$Home_team, fixed = TRUE)
+df_prepared$Away_team <- gsub(".", " ", df_prepared$Away_team, fixed = TRUE)
+df_prepared$Squad <- gsub("-", " ", df_prepared$Squad, fixed = TRUE)
+df_prepared$Squad <- gsub(".", " ", df_prepared$Squad, fixed = TRUE)
+df_prepared$Squad <- gsub("'", " ", df_prepared$Squad, fixed = TRUE)
+
+main_stats <- df_prepared |> 
+  group_by(Home_team, Away_team) |> 
+  slice_head(n=1) |> 
+  select(Home_team:Away_Corners)
+  
+shot_stats <- df_prepared |>
+  group_by(Home_team, Away_team) |>
+  summarise(
+    # 0-15 minutes 
+    Home_xG_15 = sum(xG[Minute <= 15 & Squad == Home_team], na.rm = TRUE),
+    Home_PSxG_15 = sum(PSxG[Minute <= 15 & Squad == Home_team], na.rm = TRUE),
+    Home_Goal_15 = sum(Outcome == "Goal" & Minute <= 15 & Squad == Home_team, na.rm = TRUE),
+    Home_Saved_15 = sum(Outcome == "Saved" & Minute <= 15 & Squad == Home_team, na.rm = TRUE),
+    Home_Blocked_15 = sum(Outcome == "Blocked" & Minute <= 15 & Squad == Home_team, na.rm = TRUE),
+    Home_OffTarget_15 = sum(Outcome == "Off Target" & Minute <= 15 & Squad == Home_team, na.rm = TRUE),
+    Home_Woodwork_15 = sum(Outcome == "Woodwork" & Minute <= 15 & Squad == Home_team, na.rm = TRUE),
+    
+    Away_xG_15 = sum(xG[Minute <= 15 & Squad == Away_team], na.rm = TRUE),
+    Away_PSxG_15 = sum(PSxG[Minute <= 15 & Squad == Away_team], na.rm = TRUE),
+    Away_Goal_15 = sum(Outcome == "Goal" & Minute <= 15 & Squad == Away_team, na.rm = TRUE),
+    Away_Saved_15 = sum(Outcome == "Saved" & Minute <= 15 & Squad == Away_team, na.rm = TRUE),
+    Away_Blocked_15 = sum(Outcome == "Blocked" & Minute <= 15 & Squad == Away_team, na.rm = TRUE),
+    Away_OffTarget_15 = sum(Outcome == "Off Target" & Minute <= 15 & Squad == Away_team, na.rm = TRUE),
+    Away_Woodwork_15 = sum(Outcome == "Woodwork" & Minute <= 15 & Squad == Away_team, na.rm = TRUE),
+
+    # 16-30 minutes
+    Home_xG_30 = sum(xG[Minute > 15 & Minute <= 30 & Squad == Home_team], na.rm = TRUE),
+    Home_PSxG_30 = sum(PSxG[Minute > 15 & Minute <= 30 & Squad == Home_team], na.rm = TRUE),
+    Home_Goal_30 = sum(Outcome == "Goal" & Minute > 15 & Minute <= 30 & Squad == Home_team, na.rm = TRUE),
+    Home_Saved_30 = sum(Outcome == "Saved" & Minute > 15 & Minute <= 30 & Squad == Home_team, na.rm = TRUE),
+    Home_Blocked_30 = sum(Outcome == "Blocked" & Minute > 15 & Minute <= 30 & Squad == Home_team, na.rm = TRUE),
+    Home_OffTarget_30 = sum(Outcome == "Off Target" & Minute > 15 & Minute <= 30 & Squad == Home_team, na.rm = TRUE),
+    Home_Woodwork_30 = sum(Outcome == "Woodwork" & Minute > 15 & Minute <= 30 & Squad == Home_team, na.rm = TRUE),
+
+    Away_xG_30 = sum(xG[Minute > 15 & Minute <= 30 & Squad == Away_team], na.rm = TRUE),
+    Away_PSxG_30 = sum(PSxG[Minute > 15 & Minute <= 30 & Squad == Away_team], na.rm = TRUE),
+    Away_Goal_30 = sum(Outcome == "Goal" & Minute > 15 & Minute <= 30 & Squad == Away_team, na.rm = TRUE),
+    Away_Saved_30 = sum(Outcome == "Saved" & Minute > 15 & Minute <= 30 & Squad == Away_team, na.rm = TRUE),
+    Away_Blocked_30 = sum(Outcome == "Blocked" & Minute > 15 & Minute <= 30 & Squad == Away_team, na.rm = TRUE),
+    Away_OffTarget_30 = sum(Outcome == "Off Target" & Minute > 15 & Minute <= 30 & Squad == Away_team, na.rm = TRUE),
+    Away_Woodwork_30 = sum(Outcome == "Woodwork" & Minute > 15 & Minute <= 30 & Squad == Away_team, na.rm = TRUE),
+
+    # 31-45 minutes 
+    Home_xG_45 = sum(xG[Minute > 30 & Minute <= 45 & Squad == Home_team], na.rm = TRUE),
+    Home_PSxG_45 = sum(PSxG[Minute > 30 & Minute <= 45 & Squad == Home_team], na.rm = TRUE),
+    Home_Goal_45 = sum(Outcome == "Goal" & Minute > 30 & Minute <= 45 & Squad == Home_team, na.rm = TRUE),
+    Home_Saved_45 = sum(Outcome == "Saved" & Minute > 30 & Minute <= 45 & Squad == Home_team, na.rm = TRUE),
+    Home_Blocked_45 = sum(Outcome == "Blocked" & Minute > 30 & Minute <= 45 & Squad == Home_team, na.rm = TRUE),
+    Home_OffTarget_45 = sum(Outcome == "Off Target" & Minute > 30 & Minute <= 45 & Squad == Home_team, na.rm = TRUE),
+    Home_Woodwork_45 = sum(Outcome == "Woodwork" & Minute > 30 & Minute <= 45 & Squad == Home_team, na.rm = TRUE),
+
+    Away_xG_45 = sum(xG[Minute > 30 & Minute <= 45 & Squad == Away_team], na.rm = TRUE),
+    Away_PSxG_45 = sum(PSxG[Minute > 30 & Minute <= 45 & Squad == Away_team], na.rm = TRUE),
+    Away_Goal_45 = sum(Outcome == "Goal" & Minute > 30 & Minute <= 45 & Squad == Away_team, na.rm = TRUE),
+    Away_Saved_45 = sum(Outcome == "Saved" & Minute > 30 & Minute <= 45 & Squad == Away_team, na.rm = TRUE),
+    Away_Blocked_45 = sum(Outcome == "Blocked" & Minute > 30 & Minute <= 45 & Squad == Away_team, na.rm = TRUE),
+    Away_OffTarget_45 = sum(Outcome == "Off Target" & Minute > 30 & Minute <= 45 & Squad == Away_team, na.rm = TRUE),
+    Away_Woodwork_45 = sum(Outcome == "Woodwork" & Minute > 30 & Minute <= 45 & Squad == Away_team, na.rm = TRUE),
+
+    # 46-60 minutes
+    Home_xG_60 = sum(xG[Minute > 45 & Minute <= 60 & Squad == Home_team], na.rm = TRUE),
+    Home_PSxG_60 = sum(PSxG[Minute > 45 & Minute <= 60 & Squad == Home_team], na.rm = TRUE),
+    Home_Goal_60 = sum(Outcome == "Goal" & Minute > 45 & Minute <= 60 & Squad == Home_team, na.rm = TRUE),
+    Home_Saved_60 = sum(Outcome == "Saved" & Minute > 45 & Minute <= 60 & Squad == Home_team, na.rm = TRUE),
+    Home_Blocked_60 = sum(Outcome == "Blocked" & Minute > 45 & Minute <= 60 & Squad == Home_team, na.rm = TRUE),
+    Home_OffTarget_60 = sum(Outcome == "Off Target" & Minute > 45 & Minute <= 60 & Squad == Home_team, na.rm = TRUE),
+    Home_Woodwork_60 = sum(Outcome == "Woodwork" & Minute > 45 & Minute <= 60 & Squad == Home_team, na.rm = TRUE),
+    
+    Away_xG_60 = sum(xG[Minute > 45 & Minute <= 60 & Squad == Away_team], na.rm = TRUE),
+    Away_PSxG_60 = sum(PSxG[Minute > 45 & Minute <= 60 & Squad == Away_team], na.rm = TRUE),
+    Away_Goal_60 = sum(Outcome == "Goal" & Minute > 45 & Minute <= 60 & Squad == Away_team, na.rm = TRUE),
+    Away_Saved_60 = sum(Outcome == "Saved" & Minute > 45 & Minute <= 60 & Squad == Away_team, na.rm = TRUE),
+    Away_Blocked_60 = sum(Outcome == "Blocked" & Minute > 45 & Minute <= 60 & Squad == Away_team, na.rm = TRUE),
+    Away_OffTarget_60 = sum(Outcome == "Off Target" & Minute > 45 & Minute <= 60 & Squad == Away_team, na.rm = TRUE),
+    Away_Woodwork_60 = sum(Outcome == "Woodwork" & Minute > 45 & Minute <= 60 & Squad == Away_team, na.rm = TRUE),
+
+    # 61-75 minutes
+    Home_xG_75 = sum(xG[Minute > 60 & Minute <= 75 & Squad == Home_team], na.rm = TRUE),
+    Home_PSxG_75 = sum(PSxG[Minute > 60 & Minute <= 75 & Squad == Home_team], na.rm = TRUE),
+    Home_Goal_75 = sum(Outcome == "Goal" & Minute > 60 & Minute <= 75 & Squad == Home_team, na.rm = TRUE),
+    Home_Saved_75 = sum(Outcome == "Saved" & Minute > 60 & Minute <= 75 & Squad == Home_team, na.rm = TRUE),
+    Home_Blocked_75 = sum(Outcome == "Blocked" & Minute > 60 & Minute <= 75 & Squad == Home_team, na.rm = TRUE),
+    Home_OffTarget_75 = sum(Outcome == "Off Target" & Minute > 60 & Minute <= 75 & Squad == Home_team, na.rm = TRUE),
+    Home_Woodwork_75 = sum(Outcome == "Woodwork" & Minute > 60 & Minute <= 75 & Squad == Home_team, na.rm = TRUE),
+    
+    Away_xG_75 = sum(xG[Minute > 60 & Minute <= 75 & Squad == Away_team], na.rm = TRUE),
+    Away_PSxG_75 = sum(PSxG[Minute > 60 & Minute <= 75 & Squad == Away_team], na.rm = TRUE),
+    Away_Goal_75 = sum(Outcome == "Goal" & Minute > 60 & Minute <= 75 & Squad == Away_team, na.rm = TRUE),
+    Away_Saved_75 = sum(Outcome == "Saved" & Minute > 60 & Minute <= 75 & Squad == Away_team, na.rm = TRUE),
+    Away_Blocked_75 = sum(Outcome == "Blocked" & Minute > 60 & Minute <= 75 & Squad == Away_team, na.rm = TRUE),
+    Away_OffTarget_75 = sum(Outcome == "Off Target" & Minute > 60 & Minute <= 75 & Squad == Away_team, na.rm = TRUE),
+    Away_Woodwork_75 = sum(Outcome == "Woodwork" & Minute > 60 & Minute <= 75 & Squad == Away_team, na.rm = TRUE),
+
+    # 76-end
+    Home_xG_90 = sum(xG[Minute > 75 & Squad == Home_team], na.rm = TRUE),
+    Home_PSxG_90 = sum(PSxG[Minute > 75 & Squad == Home_team], na.rm = TRUE),
+    Home_Goal_90 = sum(Outcome == "Goal" & Minute > 75 & Squad == Home_team, na.rm = TRUE),
+    Home_Saved_90 = sum(Outcome == "Saved" & Minute > 75 & Squad == Home_team, na.rm = TRUE),
+    Home_Blocked_90 = sum(Outcome == "Blocked" & Minute > 75 & Squad == Home_team, na.rm = TRUE),
+    Home_OffTarget_90 = sum(Outcome == "Off Target" & Minute > 75 & Squad == Home_team, na.rm = TRUE),
+    Home_Woodwork_90 = sum(Outcome == "Woodwork" & Minute > 75 & Squad == Home_team, na.rm = TRUE),
+    
+    Away_xG_90 = sum(xG[Minute > 75 & Squad == Away_team], na.rm = TRUE),
+    Away_PSxG_90 = sum(PSxG[Minute > 75 & Squad == Away_team], na.rm = TRUE),
+    Away_Goal_90 = sum(Outcome == "Goal" & Minute > 75 & Squad == Away_team, na.rm = TRUE),
+    Away_Saved_90 = sum(Outcome == "Saved" & Minute > 75 & Squad == Away_team, na.rm = TRUE),
+    Away_Blocked_90 = sum(Outcome == "Blocked" & Minute > 75 & Squad == Away_team, na.rm = TRUE),
+    Away_OffTarget_90 = sum(Outcome == "Off Target" & Minute > 75 & Squad == Away_team, na.rm = TRUE),
+    Away_Woodwork_90 = sum(Outcome == "Woodwork" & Minute > 75 & Squad == Away_team, na.rm = TRUE),
+    .groups = 'drop' 
+  )
+
+# Join by Home_team and Away_team
+final_stats <- main_stats |> 
+  left_join(shot_stats, by = c("Home_team", "Away_team"))
+
+# Join with original df by Home/Away and Home_team/Away_team
+# First replace - by a space like above
+problems$Home <- gsub(".", " ", problems$Home, fixed = TRUE)
+problems$Away <- gsub(".", " ", problems$Away, fixed = TRUE)
+problems$Home <- gsub("-", " ", problems$Home, fixed = TRUE)
+problems$Away <- gsub("-", " ", problems$Away, fixed = TRUE)
+problems$Home <- gsub("'", " ", problems$Home, fixed = TRUE)
+problems$Away <- gsub("'", " ", problems$Away, fixed = TRUE)
+
+problems_final <- problems[c(35:69),] |> 
+  left_join(final_stats, by = c("Home" = "Home_team", "Away" = "Away_team"))
+
+problems_final_2021 <- problems_final %>%
+  mutate(
+    Home_Number_passes = as.numeric(str_extract(Home_Passing_accuracy, "(?<=of )\\d+")), # (?<=of ) sees if "of" is before the number but drops of, \\d+ takes then all digits folowing the of.  
+
+    Home_Passing_accuracy = str_extract(Home_Passing_accuracy, "\\d+%$"),
+# $ makes sure to take the digits at the end of the string folowed by a %
+    
+    Away_Number_passes = as.numeric(str_extract(Away_Passing_accuracy, "(?<=of )\\d+")),
+
+    Away_Passing_accuracy = str_extract(Away_Passing_accuracy, "^\\d+%"), 
+# ^ makes sure to take them at the start of the string
+    Home_shots = as.numeric(str_extract(Home_Shots_on_Target, "(?<=of )\\d+")), 
+    Home_Shots_on_Target = as.numeric(str_extract(Home_Shots_on_Target, "^\\d+")), 
+    Away_shots = as.numeric(str_extract(Away_Shots_on_Target, "(?<=of )\\d+")), 
+    Away_Shots_on_Target = as.numeric(str_extract(Away_Shots_on_Target, "\\d+(?= of)")),
+    Home_Saves_accuracy = str_extract(Home_Saves, "\\d+%$"),
+    Home_Saves = as.numeric(str_extract(Home_Saves, "^\\d+")),
+    Away_Saves_accuracy = str_extract(Away_Saves, "^\\d+%"),
+    Away_Saves = as.numeric(str_extract(Away_Saves, "\\d+(?= of)")),
+  ) |> 
+  relocate(Home_Number_passes, .before = Home_Passing_accuracy) |> 
+  relocate(Away_Number_passes, .before = Away_Passing_accuracy) |>
+  relocate(Home_shots, .before = Home_Shots_on_Target) |> 
+  relocate(Away_shots, .before = Away_Shots_on_Target) |> 
+  relocate(Home_Saves_accuracy, .before = Home_Saves) |> 
+  relocate(Away_Saves_accuracy, .before = Away_Saves)
+
+# Add to df without problems
+setwd("C:/Users/kian3/OneDrive - KU Leuven/Documents")
+df <- read_csv("lessen/Thesis/Processed_full_stats/Full_df/full_df_1.csv")
+ok <- df |> 
+  filter(!is.na(Home_possesion))
+df <- rbind(ok, problems_final_2425, problems_final_2324, problems_final_2223, problems_final_2122, problems_final_2021)
+write_csv(df, "C:/Users/kian3/OneDrive - KU Leuven/Documents/lessen/Thesis/Processed_full_stats/Full_df/full_df_2.csv")
+df |> 
+  arrange()
+```
