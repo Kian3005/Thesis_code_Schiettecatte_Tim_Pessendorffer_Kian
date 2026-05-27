@@ -123,7 +123,7 @@ r <- team_stats_fbref_with_delay(test_link)
 # Gather links
 setwd("C:/Users/kian3/OneDrive - KU Leuven/Documents/lessen/Thesis")
 
-jpl_file <- c("Processed_matches_full_competitions/JPL/JPL_2425_matches.csv")
+jpl_file <- c("Processed_matches_full_competitons/JPL/JPL_2425_matches.csv") # This part was done after we made the Round column in the Binding_and_cleaning_columns script was performed.
 jpl_df <- read_csv(jpl_file)
 
 # This code works only for each season separately. 
@@ -278,101 +278,5 @@ jpl_df_final <- jpl_df |>
 write_csv(jpl_df_final, "C:/Users/kian3/OneDrive - KU Leuven/Documents/lessen/Thesis/Processed_full_stats/JPL/JPL_2425_regular_season.csv")
 ```
 
-```{r}
-library(tidyverse)
-library(rvest)
-url_matches <- "https://fbref.com/en/comps/37/schedule/Belgian-Pro-League-Scores-and-Fixtures"
-html_content_matches <- read_html(url_matches)
-df_matches <- html_content_matches %>%
-  html_nodes(xpath = '//*[@id="sched_2025-2026_37_1"]') %>%
-  html_table() %>%
-  as.data.frame()
 
-df_matches <- df_matches %>%
-  filter(!is.na(Wk))
-
-relative_links <- html_content_matches %>%
-  html_nodes(xpath = '//*[@id="sched_2025-2026_37_1"]/tbody/tr/td[12]/a') %>% 
-  html_attr("href")
-full_links <- paste0("https://fbref.com", relative_links)
-df_matches <- df_matches %>%
-  mutate(Link = full_links)
-# Filter last 5 links 
-df_matches_f <- df_matches |> 
-  filter(Home == "Dender" | Away == "Dender", Match.Report == "Match Report") |> 
-  slice_tail(n=5)
-links <- df_matches_f |>
-  pull(Link)
-
-
-# Do above
-
-full_df <- final_stats
-
-full_df <- full_df %>%
-  mutate(
-    Home_Number_passes = as.numeric(str_extract(Home_Passing_accuracy, "(?<=of )\\d+")), # (?<=of ) sees if "of" is before the number but drops of, \\d+ takes then all digits folowing the of.  
-    Home_Passing_accuracy = str_extract(Home_Passing_accuracy, "\\d+%$"),
-# $ makes sure to take the digits at the end of the string folowed by a %
-    
-    Away_Number_passes = as.numeric(str_extract(Away_Passing_accuracy, "(?<=of )\\d+")),
-
-    Away_Passing_accuracy = str_extract(Away_Passing_accuracy, "^\\d+%"), 
-# ^ makes sure to take them at the start of the string
-    Home_shots = as.numeric(str_extract(Home_Shots_on_Target, "(?<=of )\\d+")), 
-    Home_Shots_on_Target = as.numeric(str_extract(Home_Shots_on_Target, "^\\d+")), 
-    Away_shots = as.numeric(str_extract(Away_Shots_on_Target, "(?<=of )\\d+")), 
-    Away_Shots_on_Target = as.numeric(str_extract(Away_Shots_on_Target, "\\d+(?= of)")),
-    Home_Saves_accuracy = str_extract(Home_Saves, "\\d+%$"),
-    Home_Saves = as.numeric(str_extract(Home_Saves, "^\\d+")),
-    Away_Saves_accuracy = str_extract(Away_Saves, "^\\d+%"),
-    Away_Saves = as.numeric(str_extract(Away_Saves, "\\d+(?= of)")),
-  ) |> 
-  relocate(Home_Number_passes, .before = Home_Passing_accuracy) |> 
-  relocate(Away_Number_passes, .before = Away_Passing_accuracy) |>
-  relocate(Home_shots, .before = Home_Shots_on_Target) |> 
-  relocate(Away_shots, .before = Away_Shots_on_Target) |> 
-  relocate(Home_Saves_accuracy, .before = Home_Saves) |> 
-  relocate(Away_Saves_accuracy, .before = Away_Saves)
-
-df_selected <- full_df |> select(Home_team, Away_team, Home_Number_passes, Away_Number_passes, Home_Saves, Away_Saves, Home_xG_15, Home_xG_30, Home_xG_45, Home_xG_60, Home_xG_75, Home_xG_90, Away_xG_15, Away_xG_30, Away_xG_45, Away_xG_60, Away_xG_75, Away_xG_90)
-
-using <- function(team){
-  df_used <- df_selected |> 
-    mutate(
-      xg_15_used = ifelse(Home_team == team, Home_xG_15, Away_xG_15),
-      xg_30_used = ifelse(Home_team == team, Home_xG_30, Away_xG_30),
-      xg_45_used = ifelse(Home_team == team, Home_xG_45, Away_xG_45),
-      xg_60_used = ifelse(Home_team == team, Home_xG_60, Away_xG_60),
-      xg_75_used = ifelse(Home_team == team, Home_xG_75, Away_xG_75),
-      xg_90_used = ifelse(Home_team == team, Home_xG_90, Away_xG_90), 
-      passes_used = ifelse(Home_team == team, Home_Number_passes, Away_Number_passes),
-      saves_used = ifelse(Home_team == team, Home_Saves, Away_Saves)
-    ) 
-  return(df_used)
-}
-
-#Home
-df_used <- using("Westerlo")
-one_home <- mean(df_used$xg_15_used)
-two_home <- mean(df_used$xg_30_used)
-three_home <- mean(df_used$xg_45_used)
-four_home <- mean(df_used$xg_60_used)
-five_home <- mean(df_used$xg_75_used)
-six_home <- mean(df_used$xg_90_used)
-p_home <- mean(df_used$passes_used)
-s_home <- mean(df_used$saves_used)
-
-# Away
-df_used_away <- using("Dender")
-one_away <- mean(df_used_away$xg_15_used)
-two_away <- mean(df_used_away$xg_30_used)
-three_away <- mean(df_used_away$xg_45_used)
-four_away <- mean(df_used_away$xg_60_used)
-five_away <- mean(df_used_away$xg_75_used)
-six_away <- mean(df_used_away$xg_90_used)
-p_away <- mean(df_used_away$passes_used)
-s_away <- mean(df_used_away$saves_used)
-
-```
 
