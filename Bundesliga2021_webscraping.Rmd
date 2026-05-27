@@ -1,0 +1,76 @@
+---
+title: "R Notebook: Bundesliga 20/21"
+output: html_notebook
+---
+
+
+```{r Collect dataframe}
+library(rvest)
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(stringr)
+library(purrr)
+library(xml2)
+
+url_matches <- "https://fbref.com/en/comps/20/2020-2021/schedule/2020-2021-Bundesliga-Scores-and-Fixtures"
+html_content_matches <- read_html(url_matches)
+df_matches <- html_content_matches %>%
+  html_nodes(xpath = '//*[@id="sched_all"]') %>%
+  html_table() %>%
+  as.data.frame()
+df_matchesfilter <- df_matches %>%
+  filter(!is.na(xG) & !is.na(xG.1))
+# Select matches that are filtered out from df_matches, 2 relegation games filtered out like in the belgian jupiler pro league 
+df_filtered_out <- df_matches %>%
+  filter(is.na(xG) | is.na(xG.1))
+relative_links <- html_content_matches %>%
+  html_nodes(xpath = '//*[@id="sched_all"]/tbody/tr/td[13]/a') %>% 
+  html_attr("href")
+full_links <- paste0("https://fbref.com", relative_links)
+full_links <- full_links[-c(307, 308)]
+
+df_matches_withlinks <- df_matchesfilter %>%
+  mutate(link = full_links)
+```
+
+```{r Apply function}
+# Apply the function
+# Test
+link <- "https://fbref.com/en/matches/11678092/Bayern-Munich-Schalke-04-September-18-2020-Bundesliga"
+test_result <- get_full_match_details_with_delay(link)
+
+# Batch processing
+links_processed_in_batch_counter <- 0
+
+df_matches_withlinks1 <- df_matches_withlinks |>
+  slice(1:ceiling(nrow(df_matches_withlinks)/3)) 
+df_matches_withlinks2 <- df_matches_withlinks |>
+  slice((ceiling(nrow(df_matches_withlinks)/3) + 1):(ceiling(nrow(df_matches_withlinks)/3) * 2)) 
+df_matches_withlinks3 <- df_matches_withlinks |>
+  slice((ceiling(nrow(df_matches_withlinks)/3) * 2 + 1):nrow(df_matches_withlinks))
+
+processed_df_list <- list()
+for (j in 1:3) {
+  current_df_part <- get(paste0("df_matches_withlinks", j))
+  cat(paste0("\n\n--- Start processing part ", j, " ---\n"))
+  
+  links_processed_in_batch_counter <- 0
+
+  links_to_scrape_in_part <- current_df_part %>% pull(link)
+
+  scraped_full_data <- map_dfr(links_to_scrape_in_part, get_full_match_details_with_delay, .progress = TRUE)
+
+  current_df_part <- current_df_part %>%
+    left_join(scraped_full_data, by = "link")
+
+  processed_df_list[[j]] <- current_df_part
+
+  write_csv(current_df_part, paste0("Bundesliga_2021_part", j, "_matches.csv"))
+  cat(paste0("\nPart ", j, " processed and saved.\n"))
+}
+# Combine all parts into one final dataframe
+final_df <- bind_rows(processed_df_list)
+write_csv(final_df, "Bundesliga_2021_matches.csv")
+```
+
