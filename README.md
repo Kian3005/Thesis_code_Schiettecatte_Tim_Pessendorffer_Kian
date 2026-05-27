@@ -1,1 +1,1 @@
-"# Thesis_code_Schiettecatte_Tim_Pessendorffer_Kian" 
+This repo contains the code for the collection of data, datacleaning and data analysis. The dataset has not been included given the contract dispute between Opta and the website we have used for webscraping (FBref). As such part of the data we collected is now not publicly available anymore and we therefore do not share the collected datasets.
